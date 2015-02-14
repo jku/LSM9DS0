@@ -132,6 +132,12 @@ typedef struct {
     int16_t z;
 } Triplet;
 
+typedef struct {
+    float x;
+    float y;
+    float z;
+} FTriplet;
+
 typedef enum { // degrees per second
     GYRO_SCALE_245DPS,
     GYRO_SCALE_500DPS,
@@ -313,6 +319,36 @@ void read_bias(int file, uint8_t address, uint8_t reg, uint8_t count, Triplet *b
   bias->z = z / count;
 }
 
+void read_gyro (int file, Triplet g_bias, FTriplet *dps)
+{
+  Triplet data = {0};
+
+  read_triplet (file, G_ADDRESS, OUT_X_L_G, &data);
+  dps->x = (data.x - g_bias.x) * gyro_scale / 32768.0;
+  dps->y = (data.y - g_bias.y) * gyro_scale / 32768.0;
+  dps->z = (data.z - g_bias.z) * gyro_scale / 32768.0;
+}
+
+void read_mag (int file, FTriplet *gauss)
+{
+  Triplet data = {0};
+
+  read_triplet (file, XM_ADDRESS, OUT_X_L_M, &data);
+  gauss->x = data.x * accel_scale / 32768.0;
+  gauss->y = data.y * accel_scale / 32768.0;
+  gauss->z = data.z * accel_scale / 32768.0;
+}
+
+void read_acc (int file, Triplet a_bias, FTriplet *grav)
+{
+  Triplet data = {0};
+
+  read_triplet (file, XM_ADDRESS, OUT_X_L_A, &data);
+  grav->x = (data.x - a_bias.x) * accel_scale / 32768.0;
+  grav->y = (data.y - a_bias.y) * accel_scale / 32768.0;
+  grav->z = (data.z - a_bias.z) * accel_scale / 32768.0;
+}
+
 void calibrate(int file, Triplet *g_bias, Triplet *a_bias)
 {
   uint8_t reg5_g, reg0_xm, count;
@@ -399,7 +435,8 @@ int main (int argc, char **argv)
   int file;
   int16_t temp;
   uint8_t data[2] = {0};
-  Triplet coords, a_bias, g_bias;
+  Triplet a_bias, g_bias;
+  FTriplet gyro, mag, acc;
 
   if ((file = open(I2C_DEV_NAME, O_RDWR)) < 0) {
     printf("Failed to open the i2c bus");
@@ -431,23 +468,14 @@ int main (int argc, char **argv)
   while (1) {
     usleep (500000);
 
-    read_triplet (file, G_ADDRESS, OUT_X_L_G, &coords);
-    printf ("gyro: %4.0f %4.0f %4.0f | ",
-            (coords.x - g_bias.x) * gyro_scale / 32768.0,
-            (coords.y - g_bias.y) * gyro_scale / 32768.0,
-            (coords.z - g_bias.z) * gyro_scale / 32768.0);
+    read_gyro (file, g_bias, &gyro);
+    read_mag (file, &mag);
+    read_acc (file, a_bias, &acc);
 
-    read_triplet (file, XM_ADDRESS, OUT_X_L_M, &coords);
-    printf ("mag: %6.2f %6.2f %6.2f | ",
-            coords.x * accel_scale / 32768.0,
-            coords.y * accel_scale / 32768.0,
-            coords.z * accel_scale / 32768.0);
+    printf ("gyro: %4.0f %4.0f %4.0f | ", gyro.x, gyro.y, gyro.z);
+    printf ("mag: %6.2f %6.2f %6.2f | ", mag.x, mag.y, mag.z);
+    printf ("acc: %6.2f %6.2f %6.2f\n", acc.x, acc.y, acc.z);
 
-    read_triplet (file, XM_ADDRESS, OUT_X_L_A, &coords);
-    printf ("acc: %6.2f %6.2f %6.2f\n",
-            (coords.x - a_bias.x) * accel_scale / 32768.0,
-            (coords.y - a_bias.y) * accel_scale / 32768.0,
-            (coords.z - a_bias.z) * accel_scale / 32768.0);
   }
   return 0;
 }
