@@ -7,6 +7,7 @@
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 #include <fcntl.h>
+#include <string.h>
 #include <stdio.h>
 #include <errno.h>
 
@@ -130,12 +131,6 @@ typedef struct {
     int16_t y;
     int16_t z;
 } Triplet;
-
-typedef struct {
-    float x;
-    float y;
-    float z;
-} Bias;
 
 typedef enum { // degrees per second
     GYRO_SCALE_245DPS,
@@ -294,7 +289,7 @@ int read_triplet (int file, uint8_t address, uint8_t reg, Triplet *coords)
   return retval;
 }
 
-void read_bias(int file, uint8_t address, uint8_t reg, uint8_t count, Bias *b)
+void read_bias(int file, uint8_t address, uint8_t reg, uint8_t count, Triplet *bias)
 {
   int i;
   int32_t x, y, z;
@@ -313,12 +308,12 @@ void read_bias(int file, uint8_t address, uint8_t reg, uint8_t count, Bias *b)
     z += data.z;
   }
 
-  b->x = x / count;
-  b->y = y / count;
-  b->z = z / count;
+  bias->x = x / count;
+  bias->y = y / count;
+  bias->z = z / count;
 }
 
-void calibrate(int file, Bias *g_bias, Bias *a_bias)
+void calibrate(int file, Triplet *g_bias, Triplet *a_bias)
 {
   uint8_t reg5_g, reg0_xm, count;
 
@@ -404,8 +399,7 @@ int main (int argc, char **argv)
   int file;
   int16_t temp;
   uint8_t data[2] = {0};
-  Triplet coords;
-  Bias a_bias, g_bias;
+  Triplet coords, a_bias, g_bias;
 
   if ((file = open(I2C_DEV_NAME, O_RDWR)) < 0) {
     printf("Failed to open the i2c bus");
@@ -430,8 +424,8 @@ int main (int argc, char **argv)
 
   printf ("Calibrating (Edison should be motionless, with logo upwards)...\n");
   calibrate(file, &g_bias, &a_bias);
-  printf ("G bias: %f %f %f\n", g_bias.x, g_bias.y, g_bias.z);
-  printf ("A bias: %f %f %f\n", a_bias.x, a_bias.y, a_bias.z);
+  printf ("G bias: %d %d %d\n", g_bias.x, g_bias.y, g_bias.z);
+  printf ("A bias: %d %d %d\n", a_bias.x, a_bias.y, a_bias.z);
 
   printf ("\n  Gyroscope (deg/s)  |   Magnetometer (Gauss)    |     Accelerometer (g)\n");
   while (1) {
