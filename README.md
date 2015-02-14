@@ -7,6 +7,6 @@ Block for Intel Edison. The block contains a LSM9DS0 9DOF IMU with a
 The code is currently just hacks, might grow into a library. Lots of
 inspiration has been taken from the
 [LSM9DS0_Breakout](https://github.com/sparkfun/LSM9DS0_Breakout)
-project. 
+project. All the magic byte values are from the [LSM9DS0 datasheet](http://www.st.com/st-web-ui/static/active/en/resource/technical/document/datasheet/DM00087365.pdf).
 
-Feel free to use this code in any way you want.
+Feel free to use this code in any way you want: let's say "New BSD license".
