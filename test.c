@@ -399,7 +399,7 @@ void init_accel(int file, AccelScale scale)
   accel_scale = AccelScaleValue[scale];
 }
 
-int main ()
+int main (int argc, char **argv)
 {
   int file;
   int16_t temp;
@@ -412,8 +412,10 @@ int main ()
     return 1;
   }
 
-  dump_config_registers(file);
-  printf ("\n");
+  if (argc == 2 && strcmp(argv[1],"--dump") == 0) {
+    dump_config_registers(file);
+    printf ("\n");
+  }
 
   init_mag(file, MAG_SCALE_2GS);
   init_gyro(file, GYRO_SCALE_245DPS);
@@ -426,7 +428,7 @@ int main ()
 
   printf ("Scaling: gyro %d | mag %d | acc %d\n", gyro_scale, mag_scale, accel_scale);
 
-  printf ("Calibrating...\n");
+  printf ("Calibrating (Edison should be motionless, with logo upwards)...\n");
   calibrate(file, &g_bias, &a_bias);
   printf ("G bias: %f %f %f\n", g_bias.x, g_bias.y, g_bias.z);
   printf ("A bias: %f %f %f\n", a_bias.x, a_bias.y, a_bias.z);
