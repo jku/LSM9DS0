@@ -1,4 +1,4 @@
-/* Lot of the ideas and algos are originally from 
+/* Lot of the ideas and algos are originally from
  * https://github.com/sparkfun/LSM9DS0_Breakout/  */
 
 #include <stdint.h>
@@ -20,7 +20,7 @@ uint8_t read_byte (int file, uint8_t address, uint8_t reg);
     (byte & 0x08 ? 1 : 0), \
     (byte & 0x04 ? 1 : 0), \
     (byte & 0x02 ? 1 : 0), \
-    (byte & 0x01 ? 1 : 0) 
+    (byte & 0x01 ? 1 : 0)
 
 uint8_t print_byte;
 #define PRINT_REGISTER(file, address, reg) \
@@ -263,7 +263,7 @@ int write_bytes (int file, uint8_t address, uint8_t *data, uint8_t count)
   packets.msgs      = messages;
   packets.nmsgs     = 1;
 
-  return ioctl(file, I2C_RDWR, &packets); 
+  return ioctl(file, I2C_RDWR, &packets);
 }
 
 
@@ -436,19 +436,19 @@ int main ()
     usleep (500000);
 
     read_triplet (file, G_ADDRESS, OUT_X_L_G, &coords);
-    printf ("gyro: %4.0f %4.0f %4.0f | ", 
+    printf ("gyro: %4.0f %4.0f %4.0f | ",
             (coords.x - g_bias.x) * gyro_scale / 32768.0,
             (coords.y - g_bias.y) * gyro_scale / 32768.0,
             (coords.z - g_bias.z) * gyro_scale / 32768.0);
 
     read_triplet (file, XM_ADDRESS, OUT_X_L_M, &coords);
-    printf ("mag: %6.2f %6.2f %6.2f | ", 
+    printf ("mag: %6.2f %6.2f %6.2f | ",
             coords.x * accel_scale / 32768.0,
             coords.y * accel_scale / 32768.0,
             coords.z * accel_scale / 32768.0);
 
     read_triplet (file, XM_ADDRESS, OUT_X_L_A, &coords);
-    printf ("acc: %6.2f %6.2f %6.2f\n", 
+    printf ("acc: %6.2f %6.2f %6.2f\n",
             (coords.x - a_bias.x) * accel_scale / 32768.0,
             (coords.y - a_bias.y) * accel_scale / 32768.0,
             (coords.z - a_bias.z) * accel_scale / 32768.0);
