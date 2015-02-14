@@ -1,3 +1,6 @@
+/* Lot of the ideas and algos are originally from 
+ * https://github.com/sparkfun/LSM9DS0_Breakout/  */
+
 #include <stdint.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -158,8 +161,9 @@ typedef enum {
 } MagScale;
 uint16_t MagScaleValue[] = { 2, 4, 6, 8, 12 };
 
-//accel_scale_factor = AccelScaleValue[scale] / 32768.0;
 uint8_t accel_scale;
+uint8_t gyro_scale;
+uint8_t mag_scale;
 
 
 void dump_config_registers (int file)
@@ -349,22 +353,35 @@ void calibrate(int file, Bias *g_bias, Bias *a_bias)
   write_byte (file, XM_ADDRESS, FIFO_CTRL_REG, 0x00);
 }
 
-void init_mag(int file)
+void init_mag(int file, MagScale scale)
 {
   // enable temp sensor
   if (write_byte (file, XM_ADDRESS, CTRL_REG5_XM, 0x98) < 0)
     printf ("Failed to set CTRL_REG5_XM\n");
 
+  // all other bits 0
+  write_byte (file, XM_ADDRESS, CTRL_REG6_XM, scale << 5);
+
   // continuous conversion mode
   if (write_byte (file, XM_ADDRESS, CTRL_REG7_XM, 0x00) < 0)
     printf ("Failed to set CTRL_REG7_XM\n");
+
+  mag_scale = MagScaleValue[scale];
 }
 
-void init_gyro(int file)
+void init_gyro(int file, GyroScale scale)
 {
+  uint8_t reg4_g;
+
   // normal mode, all axes
   if (write_byte (file, G_ADDRESS, CTRL_REG1_G, 0x0f) < 0)
     printf ("Failed to set CTRL_REG1_G\n");
+
+  // zero the scale bits, then set them
+  reg4_g = read_byte (file, G_ADDRESS,  CTRL_REG4_G) & 0xCF;
+  write_byte (file, G_ADDRESS, CTRL_REG4_G, reg4_g | scale << 4);
+
+  gyro_scale = GyroScaleValue[scale];
 }
 
 void init_accel(int file, AccelScale scale)
@@ -398,35 +415,43 @@ int main ()
   dump_config_registers(file);
   printf ("\n");
 
-  init_mag(file);
-  init_gyro(file);
+  init_mag(file, MAG_SCALE_2GS);
+  init_gyro(file, GYRO_SCALE_245DPS);
   init_accel(file, ACCEL_SCALE_2G);
-  printf ("acc scale %d \n", accel_scale);
-
-  printf ("Calibrating....\n");
-  calibrate(file, &g_bias, &a_bias);
-  printf ("G bias: %f %f %f\n", g_bias.x, g_bias.y, g_bias.z);
-  printf ("A bias: %f %f %f\n", a_bias.x, a_bias.y, a_bias.z);
 
   // temperature is a 12-bit value: cut out 4 highest bits
   read_bytes (file, XM_ADDRESS, OUT_TEMP_L_XM, &data[0], 2);
   temp = (((data[1] & 0x0f) << 8) | data[0]);
-  printf ("temperature: %d\n", temp);
+  printf ("Temperature: %d\n", temp);
 
+  printf ("Scaling: gyro %d | mag %d | acc %d\n", gyro_scale, mag_scale, accel_scale);
+
+  printf ("Calibrating...\n");
+  calibrate(file, &g_bias, &a_bias);
+  printf ("G bias: %f %f %f\n", g_bias.x, g_bias.y, g_bias.z);
+  printf ("A bias: %f %f %f\n", a_bias.x, a_bias.y, a_bias.z);
+
+  printf ("\n  Gyroscope (deg/s)  |   Magnetometer (Gauss)    |     Accelerometer (g)\n");
   while (1) {
     usleep (500000);
 
     read_triplet (file, G_ADDRESS, OUT_X_L_G, &coords);
-    printf ("gyro: %5d %5d %5d | ", coords.x, coords.y, coords.z);
+    printf ("gyro: %4.0f %4.0f %4.0f | ", 
+            (coords.x - g_bias.x) * gyro_scale / 32768.0,
+            (coords.y - g_bias.y) * gyro_scale / 32768.0,
+            (coords.z - g_bias.z) * gyro_scale / 32768.0);
 
     read_triplet (file, XM_ADDRESS, OUT_X_L_M, &coords);
-    printf ("mag:  %5d %5d %5d | ", coords.x, coords.y, coords.z);
+    printf ("mag: %6.2f %6.2f %6.2f | ", 
+            coords.x * accel_scale / 32768.0,
+            coords.y * accel_scale / 32768.0,
+            coords.z * accel_scale / 32768.0);
 
     read_triplet (file, XM_ADDRESS, OUT_X_L_A, &coords);
-    printf ("acc:  %.2f %.2f %.2f\n", 
-            (coords.x - a_bias.x) * accel_scale/32768.0,
-            (coords.y - a_bias.y) * accel_scale/32768.0,
-            (coords.z - a_bias.z) * accel_scale/32768.0);
+    printf ("acc: %6.2f %6.2f %6.2f\n", 
+            (coords.x - a_bias.x) * accel_scale / 32768.0,
+            (coords.y - a_bias.y) * accel_scale / 32768.0,
+            (coords.z - a_bias.z) * accel_scale / 32768.0);
   }
   return 0;
 }
