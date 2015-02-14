@@ -1,6 +1,7 @@
 /* Lot of the ideas and algos are originally from
  * https://github.com/sparkfun/LSM9DS0_Breakout/  */
 
+#include <getopt.h>
 #include <stdint.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -166,6 +167,16 @@ uint8_t accel_scale;
 uint8_t gyro_scale;
 uint8_t mag_scale;
 
+static struct option long_options[] = {
+  {"dump",  no_argument,       0,  'd' },
+  {"help",  no_argument,       0,  'h' },
+  {"mode",  required_argument, 0,  'm' },
+};
+
+typedef enum {
+  OPTION_MODE_SENSOR,
+  OPTION_MODE_ANGLES,
+} OptionMode;
 
 void dump_config_registers (int file)
 {
@@ -437,13 +448,40 @@ int main (int argc, char **argv)
   uint8_t data[2] = {0};
   Triplet a_bias, g_bias;
   FTriplet gyro, mag, acc;
+  int opt, option_index, help = 0, option_dump = 0;
+  OptionMode option_mode = OPTION_MODE_ANGLES;
+
+  while ((opt = getopt_long(argc, argv, "dhm:",
+                            long_options, &option_index )) != -1) {
+    switch (opt) {
+      case 'd' : 
+        option_dump = 1;
+        break;
+      case 'm' :
+        if (strcmp (optarg, "sensor") == 0)
+          option_mode = OPTION_MODE_SENSOR;
+        else if (strcmp (optarg, "angles") == 0)
+          option_mode = OPTION_MODE_ANGLES;
+        else
+          help = 1;
+        break;
+      default:
+        help = 1;
+        break;
+    }
+  }
+
+  if (help || argv[optind] != NULL) {
+      printf ("%s [--mode <sensor|angles>] [--dump]\n", argv[0]);
+      return 0;
+  }
 
   if ((file = open(I2C_DEV_NAME, O_RDWR)) < 0) {
-    printf("Failed to open the i2c bus");
+    printf("Failed to open the i2c bus\n");
     return 1;
   }
 
-  if (argc == 2 && strcmp(argv[1],"--dump") == 0) {
+  if (option_dump) {
     dump_config_registers(file);
     printf ("\n");
   }
@@ -462,9 +500,13 @@ int main (int argc, char **argv)
   printf ("Calibrating (Edison should be motionless, with logo upwards)...\n");
   calibrate(file, &g_bias, &a_bias);
   printf ("G bias: %d %d %d\n", g_bias.x, g_bias.y, g_bias.z);
-  printf ("A bias: %d %d %d\n", a_bias.x, a_bias.y, a_bias.z);
+  printf ("A bias: %d %d %d\n\n", a_bias.x, a_bias.y, a_bias.z);
 
-  printf ("\n  Gyroscope (deg/s)  |   Magnetometer (Gauss)    |     Accelerometer (g)\n");
+  if (option_mode == OPTION_MODE_SENSOR)
+    printf ("  Gyroscope (deg/s)  |   Magnetometer (Gauss)    |     Accelerometer (g)\n");
+  else
+    printf ("    Accelerometer-based values: TODO  \n");
+
   while (1) {
     usleep (500000);
 
@@ -472,10 +514,14 @@ int main (int argc, char **argv)
     read_mag (file, &mag);
     read_acc (file, a_bias, &acc);
 
-    printf ("gyro: %4.0f %4.0f %4.0f | ", gyro.x, gyro.y, gyro.z);
-    printf ("mag: %6.2f %6.2f %6.2f | ", mag.x, mag.y, mag.z);
-    printf ("acc: %6.2f %6.2f %6.2f\n", acc.x, acc.y, acc.z);
-
+    if (option_mode == OPTION_MODE_SENSOR) {
+      printf ("gyro: %4.0f %4.0f %4.0f | ", gyro.x, gyro.y, gyro.z);
+      printf ("mag: %6.2f %6.2f %6.2f | ", mag.x, mag.y, mag.z);
+      printf ("acc: %6.2f %6.2f %6.2f\n", acc.x, acc.y, acc.z);
+    } else {
+      // calculate_simple_angles (mag, acc, declination, &angles1);
+      // printf ("yaw: %4.0f, pitch: %4.0f, roll: %4.0f | ", angles1.x, angles1.y, angles1.z);
+    }
   }
   return 0;
 }
