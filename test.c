@@ -1,5 +1,9 @@
 /* Lot of the ideas and algos are originally from
- * https://github.com/sparkfun/LSM9DS0_Breakout/  */
+ * https://github.com/sparkfun/LSM9DS0_Breakout/
+ *
+ * gcc -Wall -lm test.c
+ *
+ */
 
 #include <getopt.h>
 #include <stdint.h>
@@ -8,6 +12,7 @@
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
 #include <fcntl.h>
+#include <math.h>
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
@@ -128,6 +133,11 @@ uint8_t print_byte;
 #define ACT_THS            0x3E // rw
 #define ACT_DUR            0x3F // rw
 
+#define GYRO_ERROR M_PI * (40.0f / 180.0f) //rads/s
+#define GYRO_DRIFT M_PI * (0.0f / 180.0f)  // rad/s/s
+#define MADGWICK_BETA sqrt(3.0f / 4.0f) * GYRO_ERROR
+
+
 typedef struct {
     int16_t x;
     int16_t y;
@@ -139,6 +149,13 @@ typedef struct {
     float y;
     float z;
 } FTriplet;
+
+typedef struct {
+    float x;
+    float y;
+    float z;
+    float w;
+} Quaternion;
 
 typedef enum { // degrees per second
     GYRO_SCALE_245DPS,
@@ -394,6 +411,126 @@ void calculate_simple_angles (FTriplet mag, FTriplet acc, float declination, FTr
   angles->x -= declination;
   angles->y = -atan2(acc.x, sqrt(acc.y * acc.y) + zz) * (180.0 / M_PI);
   angles->z = atan2(acc.y, sqrt(acc.x * acc.x) + zz) * (180.0 / M_PI);
+
+}
+
+/* This function originally from 
+ * https://github.com/sparkfun/LSM9DS0_Breakout/blob/master/Libraries/Arduino/SFE_LSM9DS0/examples/LSM9DS0_AHRS/LSM9DS0_AHRS.ino 
+ * which in turn is an implementation of http://www.x-io.co.uk/open-source-imu-and-ahrs-algorithms/ */
+void madgwick_quaternion(FTriplet acc, FTriplet mag, FTriplet gyro, float deltat, Quaternion *quat)
+{
+    // short name local variable for readability
+    float q1 = quat->x, q2 = quat->y, q3 = quat->z, q4 = quat->w;
+    float ax = acc.x, ay = acc.y, az = acc.z;
+    float mx = mag.x, my = mag.y, mz = mag.z;
+    float gx = gyro.x * M_PI / 180.0,
+          gy = gyro.y * M_PI / 180.0,
+          gz = gyro.z * M_PI / 180.0;
+
+    float norm;
+    float hx, hy, _2bx, _2bz;
+    float s1, s2, s3, s4;
+    float qDot1, qDot2, qDot3, qDot4;
+
+    // Auxiliary variables to avoid repeated arithmetic
+    float _2q1mx;
+    float _2q1my;
+    float _2q1mz;
+    float _2q2mx;
+    float _4bx;
+    float _4bz;
+    float _2q1 = 2.0f * q1;
+    float _2q2 = 2.0f * q2;
+    float _2q3 = 2.0f * q3;
+    float _2q4 = 2.0f * q4;
+    float _2q1q3 = 2.0f * q1 * q3;
+    float _2q3q4 = 2.0f * q3 * q4;
+    float q1q1 = q1 * q1;
+    float q1q2 = q1 * q2;
+    float q1q3 = q1 * q3;
+    float q1q4 = q1 * q4;
+    float q2q2 = q2 * q2;
+    float q2q3 = q2 * q3;
+    float q2q4 = q2 * q4;
+    float q3q3 = q3 * q3;
+    float q3q4 = q3 * q4;
+    float q4q4 = q4 * q4;
+
+    // Normalise accelerometer measurement
+    norm = sqrt(ax * ax + ay * ay + az * az);
+    if (norm == 0.0f)
+      return; // handle NaN
+
+    norm = 1.0f/norm;
+    ax *= norm;
+    ay *= norm;
+    az *= norm;
+
+    // Normalise magnetometer measurement
+    norm = sqrt(mx * mx + my * my + mz * mz);
+    if (norm == 0.0f)
+      return; // handle NaN
+
+    norm = 1.0f/norm;
+    mx *= norm;
+    my *= norm;
+    mz *= norm;
+
+    // Reference direction of Earth's magnetic field
+    _2q1mx = 2.0f * q1 * mx;
+    _2q1my = 2.0f * q1 * my;
+    _2q1mz = 2.0f * q1 * mz;
+    _2q2mx = 2.0f * q2 * mx;
+    hx = mx * q1q1 - _2q1my * q4 + _2q1mz * q3 + mx * q2q2 + _2q2 * my * q3 + _2q2 * mz * q4 - mx * q3q3 - mx * q4q4;
+    hy = _2q1mx * q4 + my * q1q1 - _2q1mz * q2 + _2q2mx * q3 - my * q2q2 + my * q3q3 + _2q3 * mz * q4 - my * q4q4;
+    _2bx = sqrt(hx * hx + hy * hy);
+    _2bz = -_2q1mx * q3 + _2q1my * q2 + mz * q1q1 + _2q2mx * q4 - mz * q2q2 + _2q3 * my * q4 - mz * q3q3 + mz * q4q4;
+    _4bx = 2.0f * _2bx;
+    _4bz = 2.0f * _2bz;
+
+    // Gradient decent algorithm corrective step
+    s1 = -_2q3 * (2.0f * q2q4 - _2q1q3 - ax) + _2q2 * (2.0f * q1q2 + _2q3q4 - ay) - _2bz * q3 * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (-_2bx * q4 + _2bz * q2) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + _2bx * q3 * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
+    s2 = _2q4 * (2.0f * q2q4 - _2q1q3 - ax) + _2q1 * (2.0f * q1q2 + _2q3q4 - ay) - 4.0f * q2 * (1.0f - 2.0f * q2q2 - 2.0f * q3q3 - az) + _2bz * q4 * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (_2bx * q3 + _2bz * q1) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + (_2bx * q4 - _4bz * q2) * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
+    s3 = -_2q1 * (2.0f * q2q4 - _2q1q3 - ax) + _2q4 * (2.0f * q1q2 + _2q3q4 - ay) - 4.0f * q3 * (1.0f - 2.0f * q2q2 - 2.0f * q3q3 - az) + (-_4bx * q3 - _2bz * q1) * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (_2bx * q2 + _2bz * q4) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + (_2bx * q1 - _4bz * q3) * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
+    s4 = _2q2 * (2.0f * q2q4 - _2q1q3 - ax) + _2q3 * (2.0f * q1q2 + _2q3q4 - ay) + (-_4bx * q4 + _2bz * q2) * (_2bx * (0.5f - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx) + (-_2bx * q1 + _2bz * q3) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my) + _2bx * q2 * (_2bx * (q1q3 + q2q4) + _2bz * (0.5f - q2q2 - q3q3) - mz);
+    norm = sqrt(s1 * s1 + s2 * s2 + s3 * s3 + s4 * s4);    // normalise step magnitude
+    norm = 1.0f/norm;
+    s1 *= norm;
+    s2 *= norm;
+    s3 *= norm;
+    s4 *= norm;
+
+    // Compute rate of change of quaternion
+    qDot1 = 0.5f * (-q2 * gx - q3 * gy - q4 * gz) - MADGWICK_BETA * s1;
+    qDot2 = 0.5f * (q1 * gx + q3 * gz - q4 * gy) - MADGWICK_BETA * s2;
+    qDot3 = 0.5f * (q1 * gy - q2 * gz + q4 * gx) - MADGWICK_BETA * s3;
+    qDot4 = 0.5f * (q1 * gz + q2 * gy - q3 * gx) - MADGWICK_BETA * s4;
+
+    // Integrate to yield quaternion
+    q1 += qDot1 * deltat;
+    q2 += qDot2 * deltat;
+    q3 += qDot3 * deltat;
+    q4 += qDot4 * deltat;
+    norm = sqrt(q1 * q1 + q2 * q2 + q3 * q3 + q4 * q4);    // normalise quaternion
+    norm = 1.0f/norm;
+    quat->x = q1 * norm;
+    quat->y = q2 * norm;
+    quat->z = q3 * norm;
+    quat->w = q4 * norm;
+}
+
+void calculate_tait_bryan_angles (Quaternion quat, float declination, FTriplet *angles)
+{
+    float yaw, pitch, roll;
+    float q1 = quat.x, q2 = quat.y, q3 = quat.z, q4 = quat.w;
+
+    yaw   = atan2(2.0f * (q2 * q3 + q1 * q4), q1 * q1 + q2 * q2 - q3 * q3 - q4 * q4);
+    pitch = -asin(2.0f * (q2 * q4 - q1 * q3));
+    roll  = atan2(2.0f * (q1 * q2 + q3 * q4), -(q1 * q1 - q2 * q2 - q3 * q3 + q4 * q4));
+
+    angles->x = yaw * 180.0f / M_PI - declination; 
+    angles->y = pitch * 180.0f / M_PI;
+    angles->z = roll * 180.0f / M_PI;
 }
 
 void calibrate(int file, Triplet *g_bias, Triplet *a_bias)
