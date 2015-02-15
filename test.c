@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <math.h>
 
 uint8_t read_byte (int file, uint8_t address, uint8_t reg);
 
@@ -360,6 +361,41 @@ void read_acc (int file, Triplet a_bias, FTriplet *grav)
   grav->z = (data.z - a_bias.z) * accel_scale / 32768.0;
 }
 
+/* Axes for rotations:
+ *
+ *                      ^ pitch (y)
+ *                      |
+ *           +----------------------+
+ *           |                      |
+ *  roll (z) |   Intel    Edison    |
+ *   <---    |                      |
+ *           |                      |
+ *           | What  will you make? |
+ *           +----------------------+
+ *
+ * Yaw (x) downwards.
+ *
+ * The direction of rotation is clockwise when looking along the axis
+ * from the origin (aka right hand rule).
+ */
+void calculate_simple_angles (FTriplet mag, FTriplet acc, float declination, FTriplet *angles)
+{
+  float zz = acc.z * acc.z;
+
+  if (mag.y > 0)
+    angles->x = 90 + (atan(mag.x / mag.y) * (180.0 / M_PI));
+  else if (mag.y < 0)
+    angles->x = -90 + (atan(mag.x / mag.y) * (180.0 / M_PI));
+  else if (mag.x < 0)
+    angles->x = 0;
+  else
+    angles->x = 180;
+
+  angles->x -= declination;
+  angles->y = -atan2(acc.x, sqrt(acc.y * acc.y) + zz) * (180.0 / M_PI);
+  angles->z = atan2(acc.y, sqrt(acc.x * acc.x) + zz) * (180.0 / M_PI);
+}
+
 void calibrate(int file, Triplet *g_bias, Triplet *a_bias)
 {
   uint8_t reg5_g, reg0_xm, count;
@@ -447,7 +483,6 @@ int main (int argc, char **argv)
   int16_t temp;
   uint8_t data[2] = {0};
   Triplet a_bias, g_bias;
-  FTriplet gyro, mag, acc;
   int opt, option_index, help = 0, option_dump = 0;
   OptionMode option_mode = OPTION_MODE_ANGLES;
 
@@ -503,11 +538,13 @@ int main (int argc, char **argv)
   printf ("A bias: %d %d %d\n\n", a_bias.x, a_bias.y, a_bias.z);
 
   if (option_mode == OPTION_MODE_SENSOR)
-    printf ("  Gyroscope (deg/s)  |   Magnetometer (Gauss)    |     Accelerometer (g)\n");
+    printf ("  Gyroscope (deg/s)  | Magnetometer (mGs)  |   Accelerometer (mG)\n");
   else
-    printf ("    Accelerometer-based values: TODO  \n");
+    printf ("      Rotations (mag + acc):\n");
 
   while (1) {
+    FTriplet gyro, mag, acc, angles1;
+
     usleep (500000);
 
     read_gyro (file, g_bias, &gyro);
@@ -516,11 +553,12 @@ int main (int argc, char **argv)
 
     if (option_mode == OPTION_MODE_SENSOR) {
       printf ("gyro: %4.0f %4.0f %4.0f | ", gyro.x, gyro.y, gyro.z);
-      printf ("mag: %6.2f %6.2f %6.2f | ", mag.x, mag.y, mag.z);
-      printf ("acc: %6.2f %6.2f %6.2f\n", acc.x, acc.y, acc.z);
+      printf ("mag: %4.0f %4.0f %4.0f | ", mag.x*1000, mag.y*1000, mag.z*1000);
+      printf ("acc: %4.0f %4.0f %5.0f\n", acc.x*1000, acc.y*1000, acc.z*1000);
     } else {
-      // calculate_simple_angles (mag, acc, declination, &angles1);
-      // printf ("yaw: %4.0f, pitch: %4.0f, roll: %4.0f | ", angles1.x, angles1.y, angles1.z);
+      calculate_simple_angles (mag, acc, 0.0, &angles1);
+      printf ("yaw: %4.0f, pitch: %4.0f, roll: %4.0f\n",
+              angles1.x, angles1.y, angles1.z);
     }
   }
   return 0;
