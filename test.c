@@ -516,6 +516,14 @@ int main (int argc, char **argv)
     return 1;
   }
 
+  data[0] = read_byte (file, G_ADDRESS, WHO_AM_I_G);
+  data[1] = read_byte (file, XM_ADDRESS, WHO_AM_I_XM);
+  if (data[0] != 0xD4 || data[1] != 0x49) {
+    printf("Device id mismatch: Got %02x/%02x, expected %02x/%02x\n",
+           data[0], data[1], 0xD4, 0x49);
+    return 1;
+  }
+
   if (option_dump) {
     dump_config_registers(file);
     printf ("\n");
