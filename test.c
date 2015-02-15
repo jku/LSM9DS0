@@ -365,7 +365,8 @@ void read_mag (int file, FTriplet *gauss)
   read_triplet (file, XM_ADDRESS, OUT_X_L_M, &data);
   gauss->x = data.x * accel_scale / 32768.0;
   gauss->y = data.y * accel_scale / 32768.0;
-  gauss->z = data.z * accel_scale / 32768.0;
+  /* invert z axis so it's in the same direction as other sensors */
+  gauss->z = -data.z * accel_scale / 32768.0;
 }
 
 void read_acc (int file, Triplet a_bias, FTriplet *grav)
@@ -378,40 +379,42 @@ void read_acc (int file, Triplet a_bias, FTriplet *grav)
   grav->z = (data.z - a_bias.z) * accel_scale / 32768.0;
 }
 
-/* Axes for rotations:
+/* Axes for rotations (same as accelerometer and gyro measurements):
  *
- *                      ^ pitch (y)
- *                      |
- *           +----------------------+
- *           |                      |
- *  roll (z) |   Intel    Edison    |
- *   <---    |                      |
- *           |                      |
- *           | What  will you make? |
- *           +----------------------+
+ *  +----------------------+
+ *  |                      |
+ *  |   Intel    Edison    |  X-axis (pitch)
+ *  |                      | --->
+ *  |                      |
+ *  | What  will you make? |
+ *  +----------------------+
+ *             |
+ *             | Y-axis (roll)
+ *             v
  *
- * Yaw (x) downwards.
+ * Z-axis (yaw) downwards.
  *
  * The direction of rotation is clockwise when looking along the axis
- * from the origin (aka right hand rule).
+ * from the origin (aka right hand rule). Roll and pitch are zero when
+ * Edison is level, yaw is zero when y-axis points to north.
+ * 
  */
 void calculate_simple_angles (FTriplet mag, FTriplet acc, float declination, FTriplet *angles)
 {
   float zz = acc.z * acc.z;
 
+  angles->x = -atan2(acc.y, sqrt(acc.x * acc.x) + zz) * (180.0 / M_PI);
+  angles->y = atan2(acc.x, sqrt(acc.y * acc.y) + zz) * (180.0 / M_PI);
+
   if (mag.y > 0)
-    angles->x = 90 + (atan(mag.x / mag.y) * (180.0 / M_PI));
+    angles->z = 90 + (atan(mag.x / mag.y) * (180.0 / M_PI));
   else if (mag.y < 0)
-    angles->x = -90 + (atan(mag.x / mag.y) * (180.0 / M_PI));
+    angles->z = -90 + (atan(mag.x / mag.y) * (180.0 / M_PI));
   else if (mag.x < 0)
-    angles->x = 0;
+    angles->z = 0;
   else
-    angles->x = 180;
-
-  angles->x -= declination;
-  angles->y = -atan2(acc.x, sqrt(acc.y * acc.y) + zz) * (180.0 / M_PI);
-  angles->z = atan2(acc.y, sqrt(acc.x * acc.x) + zz) * (180.0 / M_PI);
-
+    angles->z = 180;
+  angles->z -= declination;
 }
 
 /* This function originally from 
@@ -702,7 +705,7 @@ int main (int argc, char **argv)
       printf ("acc: %4.0f %4.0f %5.0f\n", acc.x*1000, acc.y*1000, acc.z*1000);
     } else {
       calculate_simple_angles (mag, acc, 0.0, &angles1);
-      printf ("yaw: %4.0f, pitch: %4.0f, roll: %4.0f\n",
+      printf ("pitch: %4.0f, roll: %4.0f, yaw: %4.0f\n",
               angles1.x, angles1.y, angles1.z);
     }
   }
