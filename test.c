@@ -181,6 +181,12 @@ typedef enum {
 } MagScale;
 uint16_t MagScaleValue[] = { 2, 4, 6, 8, 12 };
 
+typedef struct {
+  Triplet min;
+  Triplet max;
+  Triplet bias;
+} MagDistribution;
+
 uint8_t accel_scale;
 uint8_t gyro_scale;
 uint8_t mag_scale;
@@ -358,15 +364,43 @@ void read_gyro (int file, Triplet g_bias, FTriplet *dps)
   dps->z = (data.z - g_bias.z) * gyro_scale / 32768.0;
 }
 
-void read_mag (int file, FTriplet *gauss)
+void update_mag_bias (Triplet data, MagDistribution *m_dist)
+{
+  if (data.x < m_dist->min.x) {
+    m_dist->min.x = data.x;
+    m_dist->bias.x = (m_dist->max.x + m_dist->min.x) / 2;
+  } else if (data.x > m_dist->max.x) {
+    m_dist->max.x = data.x;
+    m_dist->bias.x = (m_dist->max.x + m_dist->min.x) / 2;
+  }
+  if (data.y < m_dist->min.y) {
+    m_dist->min.y = data.y;
+    m_dist->bias.y = (m_dist->max.y + m_dist->min.y) / 2;
+  } else if (data.y > m_dist->max.y) {
+    m_dist->max.y = data.y;
+    m_dist->bias.y = (m_dist->max.y + m_dist->min.y) / 2;
+  }
+  if (data.z < m_dist->min.z) {
+    m_dist->min.z = data.z;
+    m_dist->bias.z = (m_dist->max.z + m_dist->min.z) / 2;
+  } else if (data.z > m_dist->max.z) {
+    m_dist->max.z = data.z;
+    m_dist->bias.z = (m_dist->max.z + m_dist->min.z) / 2;
+  }
+}
+
+void read_mag (int file, MagDistribution *m_dist, FTriplet *gauss)
 {
   Triplet data = {0};
 
   read_triplet (file, XM_ADDRESS, OUT_X_L_M, &data);
-  gauss->x = data.x * accel_scale / 32768.0;
-  gauss->y = data.y * accel_scale / 32768.0;
+
+  update_mag_bias (data, m_dist);
+
+  gauss->x = (data.x - m_dist->bias.x) * accel_scale / 32768.0;
+  gauss->y = (data.y - m_dist->bias.y) * accel_scale / 32768.0;
   /* invert z axis so it's in the same direction as other sensors */
-  gauss->z = -data.z * accel_scale / 32768.0;
+  gauss->z = -(data.z - m_dist->bias.z) * accel_scale / 32768.0;
 }
 
 void read_acc (int file, Triplet a_bias, FTriplet *grav)
@@ -623,6 +657,7 @@ int main (int argc, char **argv)
   int16_t temp;
   uint8_t data[2] = {0};
   Triplet a_bias, g_bias;
+  MagDistribution m_distribution = {0};
   int opt, option_index, help = 0, option_dump = 0;
   OptionMode option_mode = OPTION_MODE_ANGLES;
 
@@ -696,7 +731,7 @@ int main (int argc, char **argv)
     usleep (500000);
 
     read_gyro (file, g_bias, &gyro);
-    read_mag (file, &mag);
+    read_mag (file, &m_distribution, &mag);
     read_acc (file, a_bias, &acc);
 
     if (option_mode == OPTION_MODE_SENSOR) {
