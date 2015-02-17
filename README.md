@@ -10,3 +10,11 @@ inspiration has been taken from the
 project. All the magic byte values are from the [LSM9DS0 datasheet](http://www.st.com/st-web-ui/static/active/en/resource/technical/document/datasheet/DM00087365.pdf).
 
 Feel free to use this code in any way you want: let's say "New BSD license".
+
+#### Programs
+
+`test`: prints out either sensor values or flight dynamic parameters (yaw,
+roll & pitch). Can also dump all configuration register contents.
+
+`calibrate-acc-gyro`: produces calibration data for accelerometer and
+gyroscope.

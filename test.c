@@ -1,8 +1,5 @@
 /* Lot of the ideas and algos are originally from
  * https://github.com/sparkfun/LSM9DS0_Breakout/
- *
- * gcc -Wall -lm test.c
- *
  */
 
 #include <getopt.h>
@@ -43,10 +40,6 @@ typedef struct {
     float z;
     float w;
 } Quaternion;
-
-uint8_t accel_scale;
-uint8_t gyro_scale;
-uint8_t mag_scale;
 
 static struct option long_options[] = {
   {"dump",  no_argument,       0,  'd' },
@@ -115,30 +108,6 @@ void dump_config_registers (int file)
   PRINT_REGISTER (file, XM_ADDRESS, TIME_WINDOW);
   PRINT_REGISTER (file, XM_ADDRESS, ACT_THS);
   PRINT_REGISTER (file, XM_ADDRESS, ACT_DUR);
-}
-
-void read_bias(int file, uint8_t address, uint8_t reg, uint8_t count, Triplet *bias)
-{
-  int i;
-  int32_t x, y, z;
-
-  if (count == 0) {
-    printf ("No data for calibration\n");
-    return;
-  }
-
-  x = y = z = 0;
-  for (i = 0; i < count; ++i) {
-    Triplet data;
-    read_triplet (file, address, reg, &data);
-    x += data.x;
-    y += data.y;
-    z += data.z;
-  }
-
-  bias->x = x / count;
-  bias->y = y / count;
-  bias->z = z / count;
 }
 
 /* Axes for rotations (same as accelerometer and gyro measurements):
@@ -298,41 +267,6 @@ void calculate_tait_bryan_angles (Quaternion quat, float declination, FTriplet *
     angles->z = roll * 180.0f / M_PI;
 }
 
-void calibrate(int file, AccelScale scale, Triplet *g_bias, Triplet *a_bias)
-{
-  uint8_t reg5_g, reg0_xm, count;
-
-  // enable FIFOs
-  reg5_g = read_byte (file, G_ADDRESS, CTRL_REG5_G);
-  write_byte (file, G_ADDRESS, CTRL_REG5_G, reg5_g | 0x40);
-  reg0_xm = read_byte (file, XM_ADDRESS, CTRL_REG0_XM);
-  write_byte (file, XM_ADDRESS, CTRL_REG0_XM, reg0_xm | 0x40);
-  usleep (20000);
-
-  // set to stream mode with 32 samples
-  write_byte (file, G_ADDRESS, FIFO_CTRL_REG_G, 0x3F);
-  write_byte (file, XM_ADDRESS, FIFO_CTRL_REG, 0x3F);
-
-  // wait for samples
-  sleep (1);
-
-  count = read_byte (file, G_ADDRESS, FIFO_SRC_REG_G) & 0x1F;
-  read_bias (file, G_ADDRESS, OUT_X_L_G, count, g_bias);
-
-  count = read_byte (file, XM_ADDRESS, FIFO_SRC_REG) & 0x1F;
-  read_bias (file, XM_ADDRESS, OUT_X_L_A, count, a_bias);
-  // assume edison is face up: remove -1g from bias.z value
-  a_bias->z += (int)(1.0/AccelScaleValue[accel_scale]);
-
-  // disable FIFO
-  write_byte (file, G_ADDRESS, CTRL_REG5_G, reg5_g);
-  write_byte (file, XM_ADDRESS, CTRL_REG0_XM, reg0_xm);
-  usleep (20000);
-  // set to bypass mode
-  write_byte (file, G_ADDRESS, FIFO_CTRL_REG_G, 0x00);
-  write_byte (file, XM_ADDRESS, FIFO_CTRL_REG, 0x00);
-}
-
 int main (int argc, char **argv)
 {
   int file;
@@ -386,13 +320,6 @@ int main (int argc, char **argv)
   temp = (((data[1] & 0x0f) << 8) | data[0]);
   printf ("Temperature: %d\n", temp);
 
-  printf ("Scaling: gyro %d | mag %d | acc %d\n", gyro_scale, mag_scale, accel_scale);
-
-  printf ("Calibrating (Edison should be motionless, with logo upwards)...\n");
-  calibrate(file, ACCEL_SCALE_2G, &g_bias, &a_bias);
-  
-  printf ("G bias: %d %d %d\n", g_bias.x, g_bias.y, g_bias.z);
-  printf ("A bias: %d %d %d\n\n", a_bias.x, a_bias.y, a_bias.z);
 
   if (option_mode == OPTION_MODE_SENSOR)
     printf ("  Gyroscope (deg/s)  | Magnetometer (mGs)  |   Accelerometer (mG)\n");
