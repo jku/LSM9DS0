@@ -99,7 +99,6 @@ int main (int argc, char **argv)
     return 1;
 
   init_gyro (file, GYRO_SCALE_245DPS);
-  init_mag (file, MAG_SCALE_2GS);
   init_acc (file, ACCEL_SCALE_2G);
   
   printf ("Calibrating (Edison should be motionless, with logo upwards)...\n");

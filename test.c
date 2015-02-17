@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include <inttypes.h>
 
 #include "edison-9dof-i2c.h"
 
@@ -28,6 +29,9 @@ uint8_t print_byte;
   print_byte = read_byte(file, address, reg); \
   printf ("%-18s\t%02x / %d%d%d%d%d%d%d%d\n", \
           #reg":", print_byte, BYTE2BIN(print_byte))
+
+#define ACC_GYRO_BIAS_FILENAME "acc-gyro.bias"
+
 
 #define GYRO_ERROR M_PI * (40.0f / 180.0f) //rads/s
 #define GYRO_DRIFT M_PI * (0.0f / 180.0f)  // rad/s/s
@@ -270,7 +274,9 @@ void calculate_tait_bryan_angles (Quaternion quat, float declination, FTriplet *
 int main (int argc, char **argv)
 {
   int file;
+  FILE *input;
   int16_t temp;
+  char g_str[7], a_str[7];
   uint8_t data[2] = {0};
   Triplet a_bias, g_bias;
   MagDistribution m_distribution = {{0},{0},{0}};
@@ -300,6 +306,22 @@ int main (int argc, char **argv)
   if (help || argv[optind] != NULL) {
       printf ("%s [--mode <sensor|angles>] [--dump]\n", argv[0]);
       return 0;
+  }
+
+  input = fopen(ACC_GYRO_BIAS_FILENAME, "r");
+  if (input) {
+    if (fscanf(input, "%s %hd %hd %hd",
+               g_str, &g_bias.x, &g_bias.y, &g_bias.z) != 4 ||
+        fscanf(input, "%s %hd %hd %hd",
+               a_str, &a_bias.x, &a_bias.y, &a_bias.z) != 4 ||
+        strcmp (g_str, "g_bias") != 0 ||
+        strcmp (a_str, "a_bias") != 0) {
+      printf ("Bias file "ACC_GYRO_BIAS_FILENAME" is malformed\n");
+      return 1;
+    } else {
+      printf ("Loaded bias file G: %d %d %d, A: %d %d %d\n",
+              g_bias.x, g_bias.y, g_bias.z, a_bias.x, a_bias.y, a_bias.z);
+    }
   }
 
   file = init_device (I2C_DEV_NAME);
