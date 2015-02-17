@@ -1,76 +1,96 @@
+#include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
 
 #include "edison-9dof-i2c.h"
 
-int read_bias(int file, uint8_t address, uint8_t reg, uint8_t count, Triplet *bias)
+#define MAX_GYRO_ERROR 100
+#define MAX_ACC_ERROR 400
+#define BIAS_FILENAME "acc-gyro.bias"
+
+
+int read_bias(int file, uint8_t count, Triplet *g_bias, Triplet *a_bias)
 {
-  int i;
-  int32_t x, y, z;
+  int i, div, success = 1;
+  int32_t g_x, g_y, g_z, a_x, a_y, a_z;
+  Triplet *a_data, *g_data;
 
   if (count == 0)
     return 0;
 
-  x = y = z = 0;
+  div = count / 33 + 1;
+
+  a_data = malloc (count * sizeof (Triplet));
+  g_data = malloc (count * sizeof (Triplet));
+
+  g_x = g_y = g_z = a_x = a_y = a_z = 0;
   for (i = 0; i < count; ++i) {
-    Triplet data;
-    read_triplet (file, address, reg, &data);
-    x += data.x;
-    y += data.y;
-    z += data.z;
+    read_triplet (file, XM_ADDRESS, OUT_X_L_A, &(a_data[i]));
+    a_x += a_data[i].x;
+    a_y += a_data[i].y;
+    a_z += a_data[i].z;
+
+    read_triplet (file, G_ADDRESS, OUT_X_L_G, &(g_data[i]));
+    g_x += g_data[i].x;
+    g_y += g_data[i].y;
+    g_z += g_data[i].z;
+
+    if (i % div == 0) {
+      printf ("*");
+      fflush(stdout);
+    }
+    usleep (30000);
   }
 
-  bias->x = x / count;
-  bias->y = y / count;
-  bias->z = z / count;
+  g_bias->x = g_x / count;
+  g_bias->y = g_y / count;
+  g_bias->z = g_z / count;
 
-  /* TODO fail if any data is too far from bias values
-   * (i.e. device was moved) */
+  a_bias->x = a_x / count;
+  a_bias->y = a_y / count;
+  a_bias->z = a_z / count;
 
-  return 1;
+  printf ("                            \r");
+
+  /* fail if it looks like the device moved while calibrating */
+  for (i = 0; i < count; ++i) {
+    if (abs(g_bias->x - g_data[i].x) > MAX_GYRO_ERROR ||
+        abs(g_bias->y - g_data[i].y) > MAX_GYRO_ERROR ||
+        abs(g_bias->z - g_data[i].z) > MAX_GYRO_ERROR){
+      printf ("Unexpected jitter in gyroscope\n");
+      success = 0;
+      break;
+    }
+    if (abs(a_bias->x - a_data[i].x) > MAX_ACC_ERROR ||
+        abs(a_bias->y - a_data[i].y) > MAX_ACC_ERROR ||
+        abs(a_bias->z - a_data[i].z) > MAX_ACC_ERROR) {
+      printf ("Unexpected jitter in acceleration\n");
+      success = 0;
+      break;
+    }
+  }
+
+  free (g_data);
+  free (a_data);
+
+  return success;
 }
 
 int calibrate(int file, AccelScale scale, Triplet *g_bias, Triplet *a_bias)
 {
-  uint8_t reg5_g, reg0_xm, count;
-  int a_success, g_success;
+  int success;
 
-  // enable FIFOs
-  reg5_g = read_byte (file, G_ADDRESS, CTRL_REG5_G);
-  write_byte (file, G_ADDRESS, CTRL_REG5_G, reg5_g | 0x40);
-  reg0_xm = read_byte (file, XM_ADDRESS, CTRL_REG0_XM);
-  write_byte (file, XM_ADDRESS, CTRL_REG0_XM, reg0_xm | 0x40);
-  usleep (20000);
-
-  // set to stream mode with 32 samples
-  write_byte (file, G_ADDRESS, FIFO_CTRL_REG_G, 0x3F);
-  write_byte (file, XM_ADDRESS, FIFO_CTRL_REG, 0x3F);
-
-  // wait for samples
-  sleep (1);
-
-  count = read_byte (file, G_ADDRESS, FIFO_SRC_REG_G) & 0x1F;
-  g_success = read_bias (file, G_ADDRESS, OUT_X_L_G, count, g_bias);
-
-  count = read_byte (file, XM_ADDRESS, FIFO_SRC_REG) & 0x1F;
-  a_success = read_bias (file, XM_ADDRESS, OUT_X_L_A, count, a_bias);
+  success = read_bias (file, 100, g_bias, a_bias);
   // assume edison is face up: remove -1g from bias.z value
   a_bias->z += (int)(1.0/AccelScaleValue[scale]);
 
-  // disable FIFO
-  write_byte (file, G_ADDRESS, CTRL_REG5_G, reg5_g);
-  write_byte (file, XM_ADDRESS, CTRL_REG0_XM, reg0_xm);
-  usleep (20000);
-  // set to bypass mode
-  write_byte (file, G_ADDRESS, FIFO_CTRL_REG_G, 0x00);
-  write_byte (file, XM_ADDRESS, FIFO_CTRL_REG, 0x00);
-
-  return (count >= 30 && a_success && g_success);
+  return (success);
 }
 
 
 int main (int argc, char **argv)
 {
+  FILE *output;
   int file;
   Triplet a_bias, g_bias;
 
@@ -86,8 +106,15 @@ int main (int argc, char **argv)
   while (!calibrate (file, ACCEL_SCALE_2G, &g_bias, &a_bias))
     printf ("Calibration failed, trying again...\n");
 
-  printf ("G bias: %d %d %d\n", g_bias.x, g_bias.y, g_bias.z);
-  printf ("A bias: %d %d %d\n\n", a_bias.x, a_bias.y, a_bias.z);
+  output = fopen(BIAS_FILENAME, "w");
+  if (!output){
+    printf("Error opening '"BIAS_FILENAME"' for output.\n");
+    return 1;
+  }
+  fprintf(output, "g_bias %d %d %d\n", g_bias.x, g_bias.y, g_bias.z);
+  fprintf(output, "a_bias %d %d %d\n", a_bias.x, a_bias.y, a_bias.z);
+  fclose (output);
 
+  printf ("Calibration succesful, wrote '"BIAS_FILENAME"'.\n");  
   return 0;
 }
