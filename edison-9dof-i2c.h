@@ -136,14 +136,6 @@ typedef enum {
 } MagScale;
 extern const float MagScaleValue[];
 
-/* todo move this out */
-typedef struct {
-  Triplet min;
-  Triplet max;
-  Triplet bias;
-} MagDistribution;
-
-
 int init_device   (const char* device_name);
 
 int write_bytes   (int file, uint8_t address, uint8_t *data, uint8_t count);
@@ -158,7 +150,7 @@ void init_mag     (int file, MagScale scale);
 void init_acc     (int file, AccelScale scale);
 
 void read_gyro    (int file, Triplet g_bias, GyroScale scale, FTriplet *dps);
-void read_mag     (int file, MagDistribution *m_dist, MagScale scale, FTriplet *gauss);
+void read_mag     (int file, Triplet m_bias, MagScale scale, FTriplet *gauss);
 void read_acc     (int file, Triplet a_bias, AccelScale scale, FTriplet *grav);
 
 #endif // EDISON_9DOF_I2C_H

@@ -100,7 +100,7 @@ int main (int argc, char **argv)
 
   init_gyro (file, GYRO_SCALE_245DPS);
   init_acc (file, ACCEL_SCALE_2G);
-  
+
   printf ("Calibrating (Edison should be motionless, with logo upwards)...\n");
   while (!calibrate (file, ACCEL_SCALE_2G, &g_bias, &a_bias))
     printf ("Calibration failed, trying again...\n");

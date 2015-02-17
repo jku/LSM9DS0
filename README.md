@@ -17,4 +17,9 @@ Feel free to use this code in any way you want: let's say "New BSD license".
 roll & pitch). Can also dump all configuration register contents.
 
 `calibrate-acc-gyro`: produces calibration data for accelerometer and
-gyroscope.
+gyroscope. Device should stand motionless on level and stable
+surface during the calibration.
+
+`calibrate-mag`: produces calibration data for magnetometer. Device
+should be turned to every direction during the calibration.
+

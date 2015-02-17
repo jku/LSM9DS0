@@ -31,7 +31,7 @@ uint8_t print_byte;
           #reg":", print_byte, BYTE2BIN(print_byte))
 
 #define ACC_GYRO_BIAS_FILENAME "acc-gyro.bias"
-
+#define MAG_BIAS_FILENAME "mag.bias"
 
 #define GYRO_ERROR M_PI * (40.0f / 180.0f) //rads/s
 #define GYRO_DRIFT M_PI * (0.0f / 180.0f)  // rad/s/s
@@ -271,15 +271,58 @@ void calculate_tait_bryan_angles (Quaternion quat, float declination, FTriplet *
     angles->z = roll * 180.0f / M_PI;
 }
 
+int read_bias_files (Triplet *a_bias, Triplet *m_bias, Triplet *g_bias)
+{
+  FILE *input;
+  char g_str[7], a_str[7], m_str[7];
+
+  input = fopen(ACC_GYRO_BIAS_FILENAME, "r");
+  if (input) {
+    if (fscanf(input, "%s %hd %hd %hd",
+               g_str, &g_bias->x, &g_bias->y, &g_bias->z) != 4 ||
+        fscanf(input, "%s %hd %hd %hd",
+               a_str, &a_bias->x, &a_bias->y, &a_bias->z) != 4 ||
+        strcmp (g_str, "g_bias") != 0 ||
+        strcmp (a_str, "a_bias") != 0) {
+      printf ("Bias file "ACC_GYRO_BIAS_FILENAME" is malformed\n");
+      fclose (input);
+      return 0;
+    } else {
+      printf ("Loaded bias file G: %d %d %d, A: %d %d %d\n",
+              g_bias->x, g_bias->y, g_bias->z,
+              a_bias->x, a_bias->y, a_bias->z);
+    }
+    fclose (input);
+  } else {
+    printf ("Bias file "ACC_GYRO_BIAS_FILENAME" not found.\n");
+  }
+
+  input = fopen(MAG_BIAS_FILENAME, "r");
+  if (input) {
+    if (fscanf(input, "%s %hd %hd %hd",
+               m_str, &m_bias->x, &m_bias->y, &m_bias->z) != 4 ||
+        strcmp (m_str, "m_bias") != 0) {
+      printf ("Bias file "MAG_BIAS_FILENAME" is malformed\n");
+      fclose (input);
+      return 0;
+    } else {
+      printf ("Loaded bias file M: %d %d %d\n",
+              m_bias->x, m_bias->y, m_bias->z);
+    }
+    fclose (input);
+  } else {
+    printf ("Bias file "MAG_BIAS_FILENAME" not found.\n");
+  }
+
+  return 1;
+}
+
 int main (int argc, char **argv)
 {
   int file;
-  FILE *input;
   int16_t temp;
-  char g_str[7], a_str[7];
   uint8_t data[2] = {0};
-  Triplet a_bias, g_bias;
-  MagDistribution m_distribution = {{0},{0},{0}};
+  Triplet a_bias = {0}, g_bias = {0}, m_bias = {0};
   int opt, option_index, help = 0, option_dump = 0;
   OptionMode option_mode = OPTION_MODE_ANGLES;
 
@@ -308,21 +351,8 @@ int main (int argc, char **argv)
       return 0;
   }
 
-  input = fopen(ACC_GYRO_BIAS_FILENAME, "r");
-  if (input) {
-    if (fscanf(input, "%s %hd %hd %hd",
-               g_str, &g_bias.x, &g_bias.y, &g_bias.z) != 4 ||
-        fscanf(input, "%s %hd %hd %hd",
-               a_str, &a_bias.x, &a_bias.y, &a_bias.z) != 4 ||
-        strcmp (g_str, "g_bias") != 0 ||
-        strcmp (a_str, "a_bias") != 0) {
-      printf ("Bias file "ACC_GYRO_BIAS_FILENAME" is malformed\n");
-      return 1;
-    } else {
-      printf ("Loaded bias file G: %d %d %d, A: %d %d %d\n",
-              g_bias.x, g_bias.y, g_bias.z, a_bias.x, a_bias.y, a_bias.z);
-    }
-  }
+  if (!read_bias_files (&a_bias, &m_bias, &g_bias))
+    return 1;
 
   file = init_device (I2C_DEV_NAME);
   if (file == 0)
@@ -354,7 +384,7 @@ int main (int argc, char **argv)
     usleep (500000);
 
     read_gyro (file, g_bias, GYRO_SCALE_245DPS, &gyro);
-    read_mag (file, &m_distribution, MAG_SCALE_2GS, &mag);
+    read_mag (file, m_bias, MAG_SCALE_2GS, &mag);
     read_acc (file, a_bias, ACCEL_SCALE_2G, &acc);
 
     if (option_mode == OPTION_MODE_SENSOR) {
