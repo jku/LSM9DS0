@@ -1,6 +1,6 @@
 
-CFLAGS=-I. -Wall
-LIBS=-lm
+CFLAGS=-I/usr/include/ncursesw -I. -Wall
+LIBS=-lm -lncurses
 HEADERS = edison-9dof-i2c.h
 OBJ = edison-9dof-i2c.o
 

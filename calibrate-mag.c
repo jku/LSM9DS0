@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <ncurses.h>
 
 #include "edison-9dof-i2c.h"
 
@@ -38,38 +39,65 @@ void update_mag_bias (Triplet data, MagDistribution *m_dist)
   }
 }
 
-int calibrate(int file, Triplet *bias)
+int get_col(int width, float f)
 {
-  int i, div;
+  /* assume values are in [-10000 , +10000] */
+  return width/2 + (int)((width / 2) * f / 10000);
+}
+
+void print_distribution (Triplet min, Triplet max, Triplet data, int width, char limit, char sensor)
+{
+  mvaddch(3, get_col (width, min.x), limit);
+  mvaddch(3, get_col (width, data.x), sensor);
+  mvaddch(3, get_col (width, max.x), limit);
+  mvaddch(4, get_col (width, min.y), limit);
+  mvaddch(4, get_col (width, data.y), sensor);
+  mvaddch(4, get_col (width, max.y), limit);
+  mvaddch(5, get_col (width, min.z), limit);
+  mvaddch(5, get_col (width, data.z), sensor);
+  mvaddch(5, get_col (width, max.z), limit);
+}
+
+int calibrate(int file, int width, Triplet *bias)
+{
+  Triplet data = {0};
   MagDistribution m_dist = {{0},{0},{0}};
 
-  div = 33;
+  while (1) {
+    print_distribution (m_dist.min, m_dist.max, data, width, ' ', ' ');
 
-  /* TODO Be smarter: stop reading when coverage is good enough */
-  for (i = 0; i < 2000; ++i) {
-    Triplet data = {0};
     read_triplet (file, XM_ADDRESS, OUT_X_L_M, &data);
     update_mag_bias (data, &m_dist);
 
-    if (i % div == 0) {
-      printf ("*");
-      fflush(stdout);
-    }
+    print_distribution (m_dist.min, m_dist.max, data, width, '|', '*');
+
+    move (6, 0);
+    refresh ();
     usleep (20000);
+    if (getch () != ERR)
+      break;
   }
-  printf ("                            \r");
 
   bias->x = m_dist.bias.x;
   bias->y = m_dist.bias.y;
   bias->z = m_dist.bias.z;
+
   return 1;
 }
 
 int main (int argc, char **argv)
 {
   FILE *output;
-  int file;
+  int file, row, col;
   Triplet bias;
+
+  initscr ();
+  nodelay (stdscr, 1);
+  noecho ();
+  cbreak ();
+  curs_set (0);
+  getmaxyx (stdscr, row, col);
+  (void)row;
 
   file = init_device (I2C_DEV_NAME);
   if (file == 0)
@@ -82,14 +110,21 @@ int main (int argc, char **argv)
     printf("Error opening '"BIAS_FILENAME"' for output.\n");
     return 1;
   }
-  
-  printf ("Calibrating (Edison should be turned to all directions until complete...\n");
-  while (!calibrate (file, &bias))
-    printf ("Calibration failed, trying again...\n");
+  mvprintw (0, 0, "Calibrating: Turn the Edison around all axes.");
+  mvprintw (1, 0, "Try to find the absolute furthest limits of each axis.");
+  mvaddch (3, 0, 'X');
+  mvaddch (4, 0, 'Y');
+  mvaddch (5, 0, 'Z');
+
+  mvprintw (7, 0, "Press any key when done.");
+
+  calibrate (file, col, &bias);
+
+  endwin ();
 
   fprintf(output, "m_bias %d %d %d\n", bias.x, bias.y, bias.z);
   fclose (output);
 
-  printf ("Calibration succesful, wrote '"BIAS_FILENAME"'.\n");  
+  printf ("Calibration succesful, wrote '"BIAS_FILENAME"'.\n");
   return 0;
 }
