@@ -12,8 +12,6 @@
 
 #include "edison-9dof-i2c.h"
 
-uint8_t read_byte (int file, uint8_t address, uint8_t reg);
-
 #define BYTE2BIN(byte) \
     (byte & 0x80 ? 1 : 0), \
     (byte & 0x40 ? 1 : 0), \
@@ -26,7 +24,7 @@ uint8_t read_byte (int file, uint8_t address, uint8_t reg);
 
 uint8_t print_byte;
 #define PRINT_REGISTER(file, address, reg) \
-  print_byte = read_byte(file, address, reg); \
+  read_byte(file, address, reg, &print_byte); \
   printf ("%-18s\t%02x / %d%d%d%d%d%d%d%d\n", \
           #reg":", print_byte, BYTE2BIN(print_byte))
 

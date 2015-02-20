@@ -142,15 +142,15 @@ int write_bytes   (int file, uint8_t address, uint8_t *data, uint8_t count);
 int write_byte    (int file, uint8_t address, uint8_t reg, uint8_t data);
 
 int read_bytes    (int file, uint8_t address, uint8_t reg, uint8_t *dest, uint8_t count);
-uint8_t read_byte (int file, uint8_t address, uint8_t reg);
+int read_byte (int file, uint8_t address, uint8_t reg, uint8_t *dest);
 int read_triplet  (int file, uint8_t address, uint8_t reg, Triplet *coords);
 
 void init_gyro    (int file, GyroScale scale);
 void init_mag     (int file, MagScale scale);
 void init_acc     (int file, AccelScale scale);
 
-void read_gyro    (int file, Triplet g_bias, GyroScale scale, FTriplet *dps);
-void read_mag     (int file, Triplet m_bias, FTriplet m_scale, MagScale scale, FTriplet *gauss);
-void read_acc     (int file, Triplet a_bias, AccelScale scale, FTriplet *grav);
+int read_gyro    (int file, Triplet g_bias, GyroScale scale, FTriplet *dps);
+int read_mag     (int file, Triplet m_bias, FTriplet m_scale, MagScale scale, FTriplet *gauss);
+int read_acc     (int file, Triplet a_bias, AccelScale scale, FTriplet *grav);
 
 #endif // EDISON_9DOF_I2C_H
