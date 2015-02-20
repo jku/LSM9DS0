@@ -150,7 +150,7 @@ void init_mag     (int file, MagScale scale);
 void init_acc     (int file, AccelScale scale);
 
 void read_gyro    (int file, Triplet g_bias, GyroScale scale, FTriplet *dps);
-void read_mag     (int file, Triplet m_bias, MagScale scale, FTriplet *gauss);
+void read_mag     (int file, Triplet m_bias, FTriplet m_scale, MagScale scale, FTriplet *gauss);
 void read_acc     (int file, Triplet a_bias, AccelScale scale, FTriplet *grav);
 
 #endif // EDISON_9DOF_I2C_H

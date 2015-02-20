@@ -129,17 +129,16 @@ void read_gyro (int file, Triplet g_bias, GyroScale scale, FTriplet *dps)
   dps->z = (data.z - g_bias.z) * GyroScaleValue[scale];
 }
 
-/* todo separate calibration */
-void read_mag (int file, Triplet m_bias,  MagScale scale, FTriplet *gauss)
+void read_mag (int file, Triplet m_bias, FTriplet m_scale, MagScale scale, FTriplet *gauss)
 {
   Triplet data = {0};
 
   read_triplet (file, XM_ADDRESS, OUT_X_L_M, &data);
 
-  gauss->x = (data.x - m_bias.x) * MagScaleValue[scale];
-  gauss->y = (data.y - m_bias.y) * MagScaleValue[scale];
+  gauss->x = (data.x - m_bias.x) * m_scale.x * MagScaleValue[scale];
+  gauss->y = (data.y - m_bias.y) * m_scale.y * MagScaleValue[scale];
   /* invert z axis so it's positive down like other sensors */
-  gauss->z = -(data.z - m_bias.z) * MagScaleValue[scale];
+  gauss->z = -(data.z - m_bias.z) * m_scale.z * MagScaleValue[scale];
 }
 
 void read_acc (int file, Triplet a_bias, AccelScale scale, FTriplet *grav)

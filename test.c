@@ -271,10 +271,10 @@ void calculate_tait_bryan_angles (Quaternion quat, float declination, FTriplet *
     angles->z = roll * 180.0f / M_PI;
 }
 
-int read_bias_files (Triplet *a_bias, Triplet *m_bias, Triplet *g_bias)
+int read_bias_files (Triplet *a_bias, Triplet *g_bias, Triplet *m_bias, FTriplet *m_scale)
 {
   FILE *input;
-  char g_str[7], a_str[7], m_str[7];
+  char g_str[7], a_str[7], m_str[7], m_scale_str[8];
 
   input = fopen(ACC_GYRO_BIAS_FILENAME, "r");
   if (input) {
@@ -301,13 +301,17 @@ int read_bias_files (Triplet *a_bias, Triplet *m_bias, Triplet *g_bias)
   if (input) {
     if (fscanf(input, "%s %hd %hd %hd",
                m_str, &m_bias->x, &m_bias->y, &m_bias->z) != 4 ||
-        strcmp (m_str, "m_bias") != 0) {
+        fscanf(input, "%s %f %f %f",
+               m_scale_str, &m_scale->x, &m_scale->y, &m_scale->z) != 4 ||
+        strcmp (m_str, "m_bias") != 0 ||
+        strcmp (m_scale_str, "m_scale") != 0) {
       printf ("Bias file "MAG_BIAS_FILENAME" is malformed\n");
       fclose (input);
       return 0;
     } else {
-      printf ("Loaded bias file M: %d %d %d\n",
-              m_bias->x, m_bias->y, m_bias->z);
+      printf ("Loaded bias file M(bias): %d %d %d, M(scale): %4f %4f %4f\n",
+              m_bias->x, m_bias->y, m_bias->z,
+              m_scale->x, m_scale->y, m_scale->z);
     }
     fclose (input);
   } else {
@@ -323,6 +327,7 @@ int main (int argc, char **argv)
   int16_t temp;
   uint8_t data[2] = {0};
   Triplet a_bias = {0}, g_bias = {0}, m_bias = {0};
+  FTriplet m_scale;
   int opt, option_index, help = 0, option_dump = 0;
   OptionMode option_mode = OPTION_MODE_ANGLES;
 
@@ -351,7 +356,7 @@ int main (int argc, char **argv)
       return 0;
   }
 
-  if (!read_bias_files (&a_bias, &m_bias, &g_bias))
+  if (!read_bias_files (&a_bias, &g_bias, &m_bias, &m_scale))
     return 1;
 
   file = init_device (I2C_DEV_NAME);
@@ -371,6 +376,7 @@ int main (int argc, char **argv)
   read_bytes (file, XM_ADDRESS, OUT_TEMP_L_XM, &data[0], 2);
   temp = (((data[1] & 0x0f) << 8) | data[0]);
   printf ("Temperature: %d\n", temp);
+  printf ("Temperature: %d\n", temp);
 
 
   if (option_mode == OPTION_MODE_SENSOR)
@@ -384,7 +390,7 @@ int main (int argc, char **argv)
     usleep (500000);
 
     read_gyro (file, g_bias, GYRO_SCALE_245DPS, &gyro);
-    read_mag (file, m_bias, MAG_SCALE_2GS, &mag);
+    read_mag (file, m_bias, m_scale, MAG_SCALE_2GS, &mag);
     read_acc (file, a_bias, ACCEL_SCALE_2G, &acc);
 
     if (option_mode == OPTION_MODE_SENSOR) {
