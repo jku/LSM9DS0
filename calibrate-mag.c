@@ -58,10 +58,12 @@ void print_distribution (Triplet min, Triplet max, Triplet data, int width, char
   mvaddch(5, get_col (width, max.z), limit);
 }
 
-int calibrate(int file, int width, Triplet *bias)
+int calibrate(int file, int width, Triplet *bias, FTriplet *scale)
 {
   Triplet data = {0};
   MagDistribution m_dist = {{0},{0},{0}};
+  Triplet diameters;
+  int avg_diameter;
 
   while (1) {
     print_distribution (m_dist.min, m_dist.max, data, width, ' ', ' ');
@@ -82,6 +84,15 @@ int calibrate(int file, int width, Triplet *bias)
   bias->y = m_dist.bias.y;
   bias->z = m_dist.bias.z;
 
+  /* Try to scale the axes (crude transform from ellipse to sphere) */
+  diameters.x = abs (m_dist.max.x - m_dist.min.x);
+  diameters.y = abs (m_dist.max.y - m_dist.min.y);
+  diameters.z = abs (m_dist.max.z - m_dist.min.z);
+  avg_diameter = (diameters.x + diameters.y + diameters.z) / 3;
+  scale->x = avg_diameter / (float)diameters.x;
+  scale->y = avg_diameter / (float)diameters.y;
+  scale->z = avg_diameter / (float)diameters.z;
+
   return 1;
 }
 
@@ -90,6 +101,7 @@ int main (int argc, char **argv)
   FILE *output;
   int file, row, col;
   Triplet bias;
+  FTriplet scale;
 
   initscr ();
   nodelay (stdscr, 1);
@@ -118,11 +130,12 @@ int main (int argc, char **argv)
 
   mvprintw (7, 0, "Press any key when done.");
 
-  calibrate (file, col, &bias);
+  calibrate (file, col, &bias, &scale);
 
   endwin ();
 
   fprintf(output, "m_bias %d %d %d\n", bias.x, bias.y, bias.z);
+  fprintf(output, "m_scale %f %f %f\n", scale.x, scale.y, scale.z);
   fclose (output);
 
   printf ("Calibration succesful, wrote '"BIAS_FILENAME"'.\n");
