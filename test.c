@@ -7,6 +7,7 @@
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
 #include <inttypes.h>
 
@@ -44,9 +45,10 @@ typedef struct {
 } Quaternion;
 
 static struct option long_options[] = {
-  {"dump",  no_argument,       0,  'd' },
-  {"help",  no_argument,       0,  'h' },
-  {"mode",  required_argument, 0,  'm' },
+  {"declination", required_argument, 0, 'd' },
+  {"dump",        no_argument,       0, 'u' },
+  {"help",        no_argument,       0, 'h' },
+  {"mode",        required_argument, 0, 'm' },
 };
 
 typedef enum {
@@ -139,15 +141,11 @@ void calculate_simple_angles (FTriplet mag, FTriplet acc, float declination, FTr
   angles->x = -atan2(acc.y, sqrt(acc.x * acc.x) + zz) * (180.0 / M_PI);
   angles->y = atan2(acc.x, sqrt(acc.y * acc.y) + zz) * (180.0 / M_PI);
 
-  if (mag.y > 0)
-    angles->z = 90 + (atan(mag.x / mag.y) * (180.0 / M_PI));
-  else if (mag.y < 0)
-    angles->z = -90 + (atan(mag.x / mag.y) * (180.0 / M_PI));
-  else if (mag.x < 0)
-    angles->z = 0;
-  else
-    angles->z = 180;
-  angles->z -= declination;
+  angles->z = atan2 (mag.x, mag.y) * (180.0 / M_PI) - declination;
+  if (angles->z > 180)
+    angles->z -= 360;
+  else if (angles->z < -180)
+    angles->z += 360;
 }
 
 /* This function originally from 
@@ -328,12 +326,13 @@ int main (int argc, char **argv)
   FTriplet m_scale;
   int opt, option_index, help = 0, option_dump = 0;
   OptionMode option_mode = OPTION_MODE_ANGLES;
+  float declination = 0.0;
 
-  while ((opt = getopt_long(argc, argv, "dhm:",
+  while ((opt = getopt_long(argc, argv, "d:hm:u",
                             long_options, &option_index )) != -1) {
     switch (opt) {
-      case 'd' : 
-        option_dump = 1;
+      case 'd' :
+        declination = atof (optarg);
         break;
       case 'm' :
         if (strcmp (optarg, "sensor") == 0)
@@ -342,6 +341,9 @@ int main (int argc, char **argv)
           option_mode = OPTION_MODE_ANGLES;
         else
           help = 1;
+        break;
+      case 'u' :
+        option_dump = 1;
         break;
       default:
         help = 1;
@@ -396,7 +398,7 @@ int main (int argc, char **argv)
       printf ("mag: %4.0f %4.0f %4.0f | ", mag.x*1000, mag.y*1000, mag.z*1000);
       printf ("acc: %4.0f %4.0f %5.0f\n", acc.x*1000, acc.y*1000, acc.z*1000);
     } else {
-      calculate_simple_angles (mag, acc, 0.0, &angles1);
+      calculate_simple_angles (mag, acc, declination, &angles1);
       printf ("pitch: %4.0f, roll: %4.0f, yaw: %4.0f\n",
               angles1.x, angles1.y, angles1.z);
     }
