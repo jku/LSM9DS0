@@ -138,8 +138,10 @@ void calculate_simple_angles (FTriplet mag, FTriplet acc, float declination, FTr
 {
   float zz = acc.z * acc.z;
 
-  angles->x = -atan2(acc.y, sqrt(acc.x * acc.x) + zz) * (180.0 / M_PI);
-  angles->y = atan2(acc.x, sqrt(acc.y * acc.y) + zz) * (180.0 / M_PI);
+  /* See eq. 37 and 38 in
+   * http://www.freescale.com/files/sensors/doc/app_note/AN3461.pdf */
+  angles->x = -atan2(acc.y, sqrt(acc.x * acc.x + zz)) * (180.0 / M_PI);
+  angles->y = atan2(acc.x, sqrt(acc.y * acc.y + zz)) * (180.0 / M_PI);
 
   angles->z = atan2 (mag.x, mag.y) * (180.0 / M_PI) - declination;
   if (angles->z > 180)
