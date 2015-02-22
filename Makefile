@@ -7,10 +7,9 @@ CURSES_LIBS=-lncurses
 
 HEADERS = edison-9dof-i2c.h
 OBJ = edison-9dof-i2c.o
+BINS = test calibrate-mag calibrate-acc-gyro
 
-
-all: test calibrate-mag calibrate-acc-gyro
-
+all: $(BINS)
 
 test: test.o $(OBJ)
 	$(CC) -o $@ $^ $(CFLAGS) $(LIBS)
@@ -32,4 +31,4 @@ calibrate-mag.o: calibrate-mag.c $(HEADERS)
 .PHONY: clean
 
 clean:
-	rm -f *.o test calibrate-acc-gyro
+	rm -f *.o $(BINS)
